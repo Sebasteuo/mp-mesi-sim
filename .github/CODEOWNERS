@@ -1,0 +1,5 @@
+/src/l1/           @Hack998          # Randall: Caché L1 (lectura/escritura/MESI)
+/src/busmem/       @jcur02           # José: Bus + Memoria (interconnect)
+/src/pe/           @Sebasteuo        # Sebastián: PEs, Loader, Métricas
+/include/api/      @Sebasteuo @Hack998 @jcur02
+/tests/            @Sebasteuo @Hack998 @jcur02
