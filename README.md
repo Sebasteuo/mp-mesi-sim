@@ -8,21 +8,23 @@ Construir un simulador en C++17 con cuatro núcleos (PEs), cada uno con su propi
 
 ## Estructura general del repositorio
 
+```text
 mp-mesi-sim/
-├── include/             -> Archivos de cabecera e interfaces comunes
-│   ├── api/             -> Contratos base: IDataMem, ICacheL1, IBus, IMemory
-│   ├── pe/              -> Código del módulo de los PEs y Loader
-│   └── util/            -> Configuración y métricas
-├── src/                 -> Implementaciones
-│   ├── pe/              -> Procesadores, Loader y métricas (Sebastián)
-│   ├── l1/              -> Caché L1 (Randall)
-│   ├── busmem/          -> Bus y Memoria (José)
-│   ├── mock/            -> Implementaciones temporales de prueba
-│   └── app/             -> Punto de entrada principal (main.cpp)
-├── docs/                -> Avances, diagramas y especificación del proyecto
-├── scripts/             -> Scripts para compilar, ejecutar y formatear
-├── tests/               -> Casos de prueba e integración
-└── CMakeLists.txt       -> Archivo principal de compilación
+├── include/               -> Archivos de cabecera e interfaces comunes
+│   ├── api/               -> Contratos base: IDataMem, ICacheL1, IBus, IMemory
+│   ├── pe/                -> Código del módulo de los PEs y Loader
+│   └── util/              -> Configuración y métricas
+├── src/                   -> Implementaciones
+│   ├── pe/                -> Procesadores, Loader y métricas (Sebastián)
+│   ├── l1/                -> Caché L1 (Randall)
+│   ├── busmem/            -> Bus y Memoria (José)
+│   ├── mock/              -> Implementaciones temporales de prueba
+│   └── app/               -> Punto de entrada principal (main.cpp)
+├── docs/                  -> Avances, diagramas y especificación del proyecto
+├── scripts/               -> Scripts para compilar, ejecutar y formatear
+├── tests/                 -> Casos de prueba e integración
+└── CMakeLists.txt         -> Archivo principal de compilación
+```
 
 ## Asignación de módulos
 
