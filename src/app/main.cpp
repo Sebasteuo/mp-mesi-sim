@@ -1,15 +1,18 @@
 /*
   Archivo: main.cpp
   Qué hace:
-    Orquesta una corrida mínima del simulador con 4 PEs usando una memoria
-    simulada (MockRam). Carga datos, ejecuta el kernel y genera un CSV.
-  Flujo:
-    1) Crear memoria mock
-    2) Cargar A y B, limpiar parciales
-    3) Configurar y lanzar 4 PEs en hilos
-    4) Leer parciales y sumar el total
-    5) Validar contra una referencia serial
-    6) Exportar métricas a CSV
+    Orquesta una corrida mínima del simulador con 4 PEs usando memoria simulada.
+    Ahora acepta parámetros por línea de comandos para no recompilar cada vez.
+
+  Parámetros admitidos:
+    --N <entero>     Tamaño del problema (elementos en A y B)
+    --align32        Activa modo de alineamiento de 32 bytes (padding)
+    --debug          Imprime info breve por PE (rango y parcial)
+
+  Ejemplos:
+    ./build/sim --N 128
+    ./build/sim --N 1000 --align32
+    ./build/sim --debug
 */
 
 #include <iostream>
@@ -17,6 +20,7 @@
 #include <vector>
 #include <cmath>
 #include <cstring>
+#include <string>
 
 #include "api/idata_mem.hpp"
 #include "util/run_config.hpp"
@@ -31,10 +35,34 @@ static inline double unpack_double(uint64_t u) {
   double d; std::memcpy(&d,&u,sizeof(double)); return d;
 }
 
-int main() {
+// Parser mínimo de argumentos: simple y claro
+static void parse_args(int argc, char** argv, RunConfig& cfg, bool& debug) {
+  for (int i = 1; i < argc; ++i) {
+    std::string a = argv[i];
+    if (a == "--N" && i+1 < argc) {
+      cfg.N = std::stoi(argv[++i]);
+    } else if (a == "--align32") {
+      cfg.align32 = true;
+    } else if (a == "--debug") {
+      debug = true;
+    } else if (a == "--help" || a == "-h") {
+      std::cout << "Uso: sim [--N <entero>] [--align32] [--debug]\n";
+      std::exit(0);
+    } else {
+      std::cerr << "Argumento desconocido: " << a << "\n";
+      std::cerr << "Prueba con --help\n";
+      std::exit(1);
+    }
+  }
+}
+
+int main(int argc, char** argv) {
   RunConfig cfg;
-  cfg.N = 32;          // tamaño pequeño para probar
-  cfg.align32 = false; // alineamiento natural de 8 bytes
+  cfg.N = 32;          // valor por defecto
+  cfg.align32 = false;
+
+  bool debug = false;
+  parse_args(argc, argv, cfg, debug);
 
   // 1) Memoria simulada
   IDataMem* mem = create_mock_ram();
@@ -61,7 +89,17 @@ int main() {
   double total = 0.0;
   for (int i = 0; i < 4; ++i) {
     uint64_t u = mem->load64(cfg.basePartial + i*8);
-    total += unpack_double(u);
+    double partial = unpack_double(u);
+    if (debug) {
+      // Rango aproximado por PE: este print es solo guía rápida
+      int base = (cfg.N / 4) * i;
+      int rest = cfg.N % 4;
+      int extra = (i == 3 ? rest : 0);
+      int nloc = (cfg.N / 4) + extra;
+      std::cout << "[debug] PE" << i << " rango=[" << base << "," << (base+nloc-1)
+                << "] parcial=" << partial << "\n";
+    }
+    total += partial;
   }
 
   // Referencia serial para validar
@@ -77,7 +115,9 @@ int main() {
   // 6) CSV de métricas por PE
   mx.to_csv("run_metrics.csv");
 
-  std::cout << "DotProduct total=" << total
+  std::cout << "N=" << cfg.N
+            << " align32=" << (cfg.align32 ? "on" : "off")
+            << "  DotProduct total=" << total
             << " ref=" << ref
             << " |err|=" << err << "\n";
   std::cout << "CSV -> run_metrics.csv\n";
