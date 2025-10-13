@@ -1,12 +1,7 @@
 /*
   Archivo: metrics.cpp
-  Qué hace:
-    Implementa las funciones para preparar el arreglo de métricas por PE
-    y para exportar todo a un CSV simple.
-  Formato CSV:
-    Columnas fijas para facilitar el análisis desde scripts externos.
+  Implementación de helpers para preparar y exportar métricas a CSV.
 */
-
 #include "util/metrics.hpp"
 #include <fstream>
 #include <iomanip>
@@ -19,11 +14,15 @@ void Metrics::resize(int pes) {
 
 void Metrics::to_csv(const std::string& path) const {
   std::ofstream f(path);
-  f << "pe_id,hits,misses_r,misses_w,inval_sent,inval_recv,loads,stores,"
+  f << "run_id,config_str,pe_id,"
+       "hits,misses_r,misses_w,inval_sent,inval_recv,"
+       "loads,stores,"
        "bus_msgs_ctrl,bus_bytes_ctrl,bus_lines_data,bus_bytes_data,"
        "ticks,result,abs_error\n";
-  for (auto const& p : per_pe) {
-    f << p.id << ","
+  for (const auto& p : per_pe) {
+    f << run_id << ","
+      << config_str << ","
+      << p.id << ","
       << p.hits << "," << p.misses_r << "," << p.misses_w << ","
       << p.inval_sent << "," << p.inval_recv << ","
       << p.loads << "," << p.stores << ","
