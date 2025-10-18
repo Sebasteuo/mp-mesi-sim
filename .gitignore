@@ -1,21 +1,25 @@
+# build outputs
 /build/
-/out/
-/dist/
-CMakeFiles/
-CMakeCache.txt
-cmake-build-*/
-compile_commands.json
+/CMakeFiles/
+/CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# local editor/OS
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# compiled objects
 *.o
 *.a
 *.so
-*.dylib
 *.dll
 *.exe
-*.obj
-*.lib
-*.pdb
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-*.code-workspace
+
+# run artifacts
+run_metrics.csv
+out_*.csv
+*.log

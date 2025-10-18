@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
       mem_store64_line(memory, cfg.baseB + i*8, pack_double(b));
     }
     for (int pe = 0; pe < 4; ++pe) {
-      mem_store64_line(memory, cfg.basePartial + pe*8, pack_double(0.0));
+      mem_store64_line(memory, cfg.basePartial + pe*(cfg.align32 ? 32ull : 8ull), pack_double(0.0));
     }
 
     // Adaptadores: cada PE verá su L1 como IDataMem
