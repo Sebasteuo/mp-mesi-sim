@@ -39,3 +39,7 @@ add_executable(sim src/app/main.cpp)
 target_link_libraries(sim PRIVATE pe_objs l1_objs busmem_objs mp_mock)
 
 enable_testing()
+
+# --- test mínimo para L1 bloqueante ---
+add_executable(l1_blocking_smoke tests/l1_blocking_smoke.cpp)
+target_link_libraries(l1_blocking_smoke PRIVATE l1_objs busmem_objs)
