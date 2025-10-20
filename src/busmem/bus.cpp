@@ -113,8 +113,22 @@ void Bus::handleBusRd(int owner, const BusPacket& req, const std::vector<SnoopRe
   sendDataTo(owner, req.addrLine, line, is_shared); // Se informa si ya era compartida
 }
 
-void Bus::handleBusUp(int owner, const BusPacket& req, const std::vector<SnoopResp>& /*resp*/) {
+void Bus::handleBusUp(int owner, const BusPacket& req, const std::vector<SnoopResp>& resp) {
   broadcastInvalidateExcept(owner, req.addrLine);
+  for (int i = 0; i < L1_COUNT; i++)
+    if (i != owner && resp[i].isModified) {
+      tickBusy(BUS_LAT);
+      // 'shared' es 'false' porque el 'owner' quiere la línea en EXCLUSIVE
+      sendDataTo(owner, req.addrLine, resp[i].data, false);
+      return;
+    }
+
+  // Si no, la memoria responde.
+  std::array<std::uint8_t, LINE_SIZE> line{};
+  tickBusy(MEM_LAT);
+  memory.readLine(req.addrLine, line);
+  // 'shared' es 'false' para que el 'owner' la reciba en EXCLUSIVE
+  sendDataTo(owner, req.addrLine, line, false);
 }
 
 void Bus::handleInv(int owner, const BusPacket& req, const std::vector<SnoopResp>& /*resp*/) {

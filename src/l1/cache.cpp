@@ -1,4 +1,5 @@
 #include "include/l1/cache.hpp"
+#include "include/l1/cacheMetrics.hpp"
 #include <iostream>
 #include <cstring>
 
@@ -26,13 +27,14 @@ void Cache::handleReadMiss(uint64_t lineAddr) {
 void Cache::handleWriteMiss(uint64_t lineAddr) {
   std::cout << "L1-" << id << ": Write Miss en dirección " << lineAddr << ". Enviando BusUp (RFO)."
             << std::endl;
+  met.inval_sent++;
   // Read-For-Ownership
   BusPacket pkt{BusMsgType::BusUp, lineAddr, id};
   bus->enqueue(id, pkt);
 }
 
 void Cache::onBusData(const BusPacket& pkt, bool shared) {
-  std::lock_guard<std::mutex> lock(mtx);
+  std::unique_lock<std::mutex> lock(mtx);
 
   uint64_t lineAddr = pkt.addrLine;
   auto& line = lines[lineAddr]; // Crea o accede a la línea
@@ -49,10 +51,12 @@ void Cache::onBusData(const BusPacket& pkt, bool shared) {
 
   std::cout << "L1-" << id << ": Recibidos datos para " << lineAddr
             << ". Nuevo estado: " << (shared ? "SHARED" : "EXCLUSIVE") << std::endl;
+
+  cv.notify_all();
 }
 
 SnoopResp Cache::snoop(const BusPacket& pkt) {
-  std::lock_guard<std::mutex> lock(mtx);
+  std::unique_lock<std::mutex> lock(mtx);
   uint64_t lineAddr = pkt.addrLine;
   auto it = lines.find(lineAddr);
 
@@ -68,8 +72,7 @@ SnoopResp Cache::snoop(const BusPacket& pkt) {
 
   switch (pkt.type) {
   case BusMsgType::BusRd:
-    // Otra caché está leyendo. Si la teníamos exclusiva o modificada,
-    // ahora pasa a ser compartida.
+    // Otra caché está leyendo.
     std::cout << "L1-" << id << ": Snoop Hit en " << lineAddr << " para BusRd." << std::endl;
     if (line.state == MESIState::MODIFIED) {
       resp.isModified = true;
@@ -86,10 +89,12 @@ SnoopResp Cache::snoop(const BusPacket& pkt) {
   case BusMsgType::BusUp:
   case BusMsgType::Invalidate:
     // Otra caché quiere escribir. Debemos invalidar nuestra copia.
+    met.inval_recv++;
     std::cout << "L1-" << id << ": Snoop Hit en " << lineAddr << " para "
               << (pkt.type == BusMsgType::BusUp ? "BusUp" : "Invalidate") << ". Invalidando línea."
               << std::endl;
     line.state = MESIState::INVALID;
+    cv.notify_all();
     break;
 
   default:
@@ -97,4 +102,14 @@ SnoopResp Cache::snoop(const BusPacket& pkt) {
   }
 
   return resp;
+}
+
+void Cache::tickBusy(unsigned long cycles) {
+  met.busy_ticks += cycles;
+}
+
+// CacheMetrics m = caches[i]->getMetrics();
+CacheMetrics Cache::getMetrics() const {
+  std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mtx));
+  return met;
 }

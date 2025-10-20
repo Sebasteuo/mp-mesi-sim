@@ -12,8 +12,16 @@
 #include "include/l1/cache.hpp"
 #include "include/busmem/messagesTypes.hpp"
 
-static inline uint64_t pack_double(double x){ uint64_t u; std::memcpy(&u,&x,8); return u; }
-static inline double   unpack_double(uint64_t u){ double d; std::memcpy(&d,&u,8); return d; }
+static inline uint64_t pack_double(double x) {
+  uint64_t u;
+  std::memcpy(&u, &x, 8);
+  return u;
+}
+static inline double unpack_double(uint64_t u) {
+  double d;
+  std::memcpy(&d, &u, 8);
+  return d;
+}
 
 int main() {
   // 1) Memoria y precarga de una línea conocida (addrLine = 0)
@@ -34,7 +42,8 @@ int main() {
 
   // 3) Bus en heap (para evitar destrucción al salir, ya que el hilo sigue vivo)
   Bus* bus = new Bus(mem, cache_ptrs);
-  for (auto& c : caches) c->setBus(*bus);
+  for (auto& c : caches)
+    c->setBus(*bus);
 
   std::thread tb(&Bus::run, bus);
   tb.detach(); // no hay stop() público; lo dejamos vivo hasta terminar el proceso

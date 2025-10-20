@@ -7,7 +7,10 @@
 #include <map>
 #include <mutex>
 #include <stdexcept>
+#include <condition_variable>
 #include "include/busmem/interfaces.hpp"
+#include "include/l1/cacheMetrics.hpp"
+#include "include/busmem/messagesTypes.hpp"
 
 // Estados del protocolo MESI
 enum class MESIState { MODIFIED, EXCLUSIVE, SHARED, INVALID };
@@ -34,6 +37,8 @@ public:
   SnoopResp snoop(const BusPacket& pkt) override;
   void onBusData(const BusPacket& pkt, bool is_shared) override;
 
+  CacheMetrics getMetrics() const;
+
 private:
   uint64_t getLineAddr(uint64_t addr) const;
   size_t getOffset(uint64_t addr) const;
@@ -42,9 +47,14 @@ private:
   void handleReadMiss(uint64_t lineAddr);
   void handleWriteMiss(uint64_t lineAddr);
 
+  void tickBusy(unsigned long cycles);
+
   int id;         // Identificador de esta caché
   IBus* bus;      // Referencia al bus para enviar mensajes
   std::mutex mtx; // Mutex para proteger el acceso concurrente a la caché
+  std::condition_variable cv;
+
+  CacheMetrics met;
 
   // Almacenamiento de la caché
   std::map<uint64_t, CacheLine> lines;
@@ -59,17 +69,25 @@ template <typename T> T Cache::read(uint64_t addr) {
   uint64_t lineAddr = getLineAddr(addr);
   size_t offset = getOffset(addr);
 
-  std::lock_guard<std::mutex> lock(mtx);
+  std::unique_lock<std::mutex> lock(mtx);
 
   auto it = lines.find(lineAddr);
+  bool did_miss = false;
 
   // MISS: La línea no está en la caché o es inválida
-  if (it == lines.end() || it->second.state == MESIState::INVALID) {
+  while (it == lines.end() || it->second.state == MESIState::INVALID) {
+    if (!did_miss) {
+      met.misses_r++;
+      did_miss = true;
+    }
     handleReadMiss(lineAddr);
-    return T{};
+    cv.wait(lock);
+    it = lines.find(lineAddr);
   }
 
   // HIT: La línea está en la caché y es válida
+  met.hits++;
+  tickBusy(L1_HIT_LAT);
   T value;
   memcpy(&value, &it->second.data[offset], sizeof(T));
   return value;
@@ -83,31 +101,42 @@ template <typename T> void Cache::write(uint64_t addr, const T& value) {
   uint64_t lineAddr = getLineAddr(addr);
   size_t offset = getOffset(addr);
 
-  std::lock_guard<std::mutex> lock(mtx);
+  std::unique_lock<std::mutex> lock(mtx);
+  bool did_miss = false;
 
   auto it = lines.find(lineAddr);
 
   // MISS: La línea no está o es inválida
-  if (it == lines.end() || it->second.state == MESIState::INVALID) {
-    handleWriteMiss(lineAddr);
-    return;
+  while (true) {
+    auto it = lines.find(lineAddr);
+
+    if (it == lines.end() || it->second.state == MESIState::INVALID) {
+      // --- WRITE MISS (Desde I) ---
+      if (!did_miss) {
+        met.misses_w++;
+        did_miss = true;
+      }
+      handleWriteMiss(lineAddr); // Envía BusUp
+      cv.wait(lock);             // Espera a que onBusData() nos despierte
+
+    } else if (it->second.state == MESIState::SHARED) {
+      // --- UPGRADE MISS (Desde S) ---
+      if (!did_miss) {
+        met.misses_w++;
+        did_miss = true;
+      }
+      handleWriteMiss(lineAddr); // Envía BusUp
+      cv.wait(lock);             // Espera a que onBusData() nos despierte
+
+    } else {
+      // --- WRITE HIT (Desde E o M) ---
+      met.hits++;
+      tickBusy(L1_HIT_LAT);
+      it->second.state = MESIState::MODIFIED;
+      memcpy(&it->second.data[offset], &value, sizeof(T));
+      break;
+    }
   }
-
-  // HIT
-  CacheLine& line = it->second;
-
-  // Si está en SHARED, necesitamos obtener propiedad exclusiva
-  if (line.state == MESIState::SHARED) {
-    line.state = MESIState::MODIFIED; // Transición optimista
-    BusPacket upgrade_pkt{BusMsgType::BusUp, lineAddr, id};
-    bus->enqueue(id, upgrade_pkt); // Invalida las copias de los demás
-  } else                           // EXCLUSIVE o MODIFIED
-  {
-    line.state = MESIState::MODIFIED;
-  }
-
-  // Escribir el dato en la línea de caché
-  memcpy(&line.data[offset], &value, sizeof(T));
 }
 
 #endif // CACHE_HPP
