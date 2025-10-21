@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MP-MESI • UI</title>
+<style>
+:root{--bg:#0f172a;--panel:#0b1220;--text:#e5e7eb;--muted:#93a5be;--border:#1f2a44;--accent:#22d3ee}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Roboto,Ubuntu,Arial,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:24px} h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 16px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin:14px 0}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+select,input[type=number]{background:#0c1630;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px}
+button{background:#0ea5e9;border:none;border-radius:10px;color:#00263b;padding:8px 14px;font-weight:700;cursor:pointer}
+a.link{color:var(--accent);text-decoration:none}
+textarea{width:100%;min-height:160px;background:#081127;border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.kv{display:flex;gap:16px;flex-wrap:wrap}.kv div{background:#0c1630;border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MP-MESI • UI</h1>
+  <p class="sub">Ejecuta el simulador y visualiza el CSV.</p>
+
+  <div class="panel">
+    <div class="row">
+      <label>arch
+        <select id="arch">
+          <option value="mock">mock (mem plana)</option>
+          <option value="l1bus">l1bus (L1 + Bus + Mem)</option>
+        </select>
+      </label>
+      <label>N <input id="N" type="number" min="1" value="32"/></label>
+      <label><input id="align32" type="checkbox"/> align32</label>
+      <label><input id="seq" type="checkbox"/> seq (solo l1bus)</label>
+      <label><input id="debug" type="checkbox"/> debug</label>
+      <button id="runBtn">Ejecutar</button>
+      <a id="dl" href="#" class="link" download>Descargar CSV</a>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Log</h3>
+    <textarea id="log" readonly></textarea>
+  </div>
+
+  <div class="panel">
+    <h3>Resumen</h3>
+    <div class="kv">
+      <div>PEs: <b id="pes">0</b></div>
+      <div>resultado total: <b id="total">0</b></div>
+      <div>csv: <b id="csvname">—</b></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Tabla por PE</h3>
+    <div style="overflow:auto">
+      <table id="tbl"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const nf = new Intl.NumberFormat('en-US',{ maximumFractionDigits:2 });
+
+function fillTable(headers, rows){
+  const thead = document.querySelector('#tbl thead');
+  const tbody = document.querySelector('#tbl tbody');
+  thead.innerHTML = '<tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr>';
+  tbody.innerHTML = rows.map(r => '<tr>' + headers.map(h=>{
+    const v = r[h]; const num = Number(v);
+    return `<td>${Number.isFinite(num)? nf.format(num) : v}</td>`;
+  }).join('') + '</tr>').join('');
+}
+
+async function runSim(){
+  $('runBtn').disabled = true; $('log').value='';
+  const payload = {
+    arch: $('arch').value,
+    N: Number($('N').value||32),
+    align32: $('align32').checked,
+    seq: $('seq').checked,
+    debug: $('debug').checked
+  };
+  try {
+    const r = await fetch('/run',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    const data = await r.json();
+    if (!data.ok) { $('log').value = data.error || 'Error'; return; }
+    $('log').value = data.log || '';
+    $('csvname').textContent = data.csv_file || '—';
+    $('dl').href = '/csv?file=' + (data.csv_file || '');
+
+    // resumen
+    $('pes').textContent = data.rows.length;
+    $('total').textContent = nf.format(data.sum_result||0);
+
+    // tabla
+    fillTable(data.header, data.rows);
+  } catch(e) {
+    $('log').value = '[UI] ' + e;
+  } finally {
+    $('runBtn').disabled = false;
+  }
+}
+
+$('runBtn').addEventListener('click', runSim);
+</script>
+</body>
+</html>
