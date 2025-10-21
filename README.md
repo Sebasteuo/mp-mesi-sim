@@ -2,6 +2,8 @@
 
 Simulador de un sistema multiprocesador con coherencia de caché mediante el protocolo MESI, desarrollado para el curso CE-4302 Arquitectura de Computadores II.
 
+![Texto alternativo](docs/Screenshot.png)
+
 ## Objetivo
 
 Construir un simulador en C++17 con cuatro núcleos (PEs), cada uno con su propia caché L1 privada y una memoria compartida coherente. El simulador ejecuta un kernel de producto punto (dot product) y permite analizar cómo afectan la coherencia, las latencias lógicas y el tráfico de bus al rendimiento.
