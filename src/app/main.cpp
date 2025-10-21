@@ -37,8 +37,16 @@ extern "C" IDataMem* create_mock_ram();
 #include "include/l1/cache.hpp"
 #include "l1/l1_idata_adapter.hpp"
 
-static inline double unpack_double(uint64_t u) { double d; std::memcpy(&d,&u,sizeof(double)); return d; }
-static inline uint64_t pack_double(double x)    { uint64_t u; std::memcpy(&u,&x,sizeof(double)); return u; }
+static inline double unpack_double(uint64_t u) {
+  double d;
+  std::memcpy(&d, &u, sizeof(double));
+  return d;
+}
+static inline uint64_t pack_double(double x) {
+  uint64_t u;
+  std::memcpy(&u, &x, sizeof(double));
+  return u;
+}
 
 // Helpers para escribir 8 bytes en memoria por línea de 32B (API IMemory)
 static inline void mem_store64_line(IMemory& mem, uint64_t addr, uint64_t val) {
@@ -51,41 +59,54 @@ static inline void mem_store64_line(IMemory& mem, uint64_t addr, uint64_t val) {
 
 int main(int argc, char** argv) {
   // -------- parse args --------
-  std::string arch = "mock";     // mock | l1bus
-  RunConfig cfg; cfg.N = 32; cfg.align32 = false;
+  std::string arch = "mock"; // mock | l1bus
+  RunConfig cfg;
+  cfg.N = 32;
+  cfg.align32 = false;
   bool debug = false;
-  bool seq = false;              // sólo aplica en l1bus
+  bool seq = false; // sólo aplica en l1bus
   std::string out_csv = "run_metrics.csv";
 
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--arch" && i+1 < argc) arch = argv[++i];
-    else if (a == "--N" && i+1 < argc) cfg.N = std::stoi(argv[++i]);
-    else if (a == "--align32") cfg.align32 = true;
-    else if (a == "--debug") debug = true;
-    else if (a == "--out" && i+1 < argc) out_csv = argv[++i];
-    else if (a == "--seq") seq = true;
+    if (a == "--arch" && i + 1 < argc)
+      arch = argv[++i];
+    else if (a == "--N" && i + 1 < argc)
+      cfg.N = std::stoi(argv[++i]);
+    else if (a == "--align32")
+      cfg.align32 = true;
+    else if (a == "--debug")
+      debug = true;
+    else if (a == "--out" && i + 1 < argc)
+      out_csv = argv[++i];
+    else if (a == "--seq")
+      seq = true;
   }
 
-  Metrics mx; mx.resize(4);
+  Metrics mx;
+  mx.resize(4);
 
   if (arch == "mock") {
     // ===================== MODO MOCK =====================
     IDataMem* mem = create_mock_ram();
-    cfg.baseA       = 0ull;
-    cfg.baseB       = 8ull * 1024 * 1024;
+    cfg.baseA = 0ull;
+    cfg.baseB = 8ull * 1024 * 1024;
     cfg.basePartial = 16ull * 1024 * 1024;
 
-    Loader loader; loader.init(mem, cfg);
+    Loader loader;
+    loader.init(mem, cfg);
     loader.load_vectors();
     loader.clear_partials();
 
     PE pes[4];
-    for (int i = 0; i < 4; ++i) pes[i].setup(i, mem, cfg, &mx.per_pe[i]);
+    for (int i = 0; i < 4; ++i)
+      pes[i].setup(i, mem, cfg, &mx.per_pe[i]);
 
     std::vector<std::thread> ts;
-    for (int i = 0; i < 4; ++i) ts.emplace_back([&pes,i]{ pes[i].run_kernel(); });
-    for (auto& t : ts) t.join();
+    for (int i = 0; i < 4; ++i)
+      ts.emplace_back([&pes, i] { pes[i].run_kernel(); });
+    for (auto& t : ts)
+      t.join();
 
   } else {
     // ===================== MODO L1BUS =====================
@@ -102,26 +123,28 @@ int main(int argc, char** argv) {
 
     // Crear Bus y conectar L1s
     Bus bus(memory, cache_ptrs);
-    for (auto& c : caches) c->setBus(bus);
+    for (auto& c : caches)
+      c->setBus(bus);
 
     // Hilo del bus (ellos no expusieron stop; lo dejamos detach)
     std::thread bus_thread(&Bus::run, &bus);
-    bus_thread.detach();
+    // bus_thread.detach();
 
     // Bases dentro de 4096 B
-    cfg.baseA       = 0ull;     // 0..(N*8-1)
-    cfg.baseB       = 512ull;   // separadas 512B
-    cfg.basePartial = 1024ull;  // parciales a partir de 1 KiB
+    cfg.baseA = 0ull;          // 0..(N*8-1)
+    cfg.baseB = 512ull;        // separadas 512B
+    cfg.basePartial = 1024ull; // parciales a partir de 1 KiB
 
     // Precarga directa en memoria (por líneas de 32B)
     for (int i = 0; i < cfg.N; ++i) {
       double a = 1.0 + i;
       double b = 0.5 * i - 1.0;
-      mem_store64_line(memory, cfg.baseA + i*8, pack_double(a));
-      mem_store64_line(memory, cfg.baseB + i*8, pack_double(b));
+      mem_store64_line(memory, cfg.baseA + i * 8, pack_double(a));
+      mem_store64_line(memory, cfg.baseB + i * 8, pack_double(b));
     }
     for (int pe = 0; pe < 4; ++pe) {
-      mem_store64_line(memory, cfg.basePartial + pe*(cfg.align32 ? 32ull : 8ull), pack_double(0.0));
+      mem_store64_line(memory, cfg.basePartial + pe * (cfg.align32 ? 32ull : 8ull),
+                       pack_double(0.0));
     }
 
     // Adaptadores: cada PE verá su L1 como IDataMem
@@ -144,14 +167,20 @@ int main(int argc, char** argv) {
     } else {
       // Ejecutar los 4 PEs en paralelo (esto requiere que L1/Bus manejen bien los misses)
       std::vector<std::thread> ts;
-      for (int i = 0; i < 4; ++i) ts.emplace_back([&pes,i]{ pes[i].run_kernel(); });
-      for (auto& t : ts) t.join();
+      for (int i = 0; i < 4; ++i)
+        ts.emplace_back([&pes, i] { pes[i].run_kernel(); });
+      for (auto& t : ts)
+        t.join();
     }
+
+    bus.stop();
+    bus_thread.join();
   }
 
   // -------- reducción (sumar resultados por PE) --------
   double total = 0.0;
-  for (int i = 0; i < 4; ++i) total += mx.per_pe[i].result;
+  for (int i = 0; i < 4; ++i)
+    total += mx.per_pe[i].result;
 
   // -------- referencia serial --------
   double ref = 0.0;
@@ -164,26 +193,19 @@ int main(int argc, char** argv) {
   // -------- metadatos y CSV --------
   std::time_t t = std::time(nullptr);
   std::ostringstream oss_id;
-  oss_id << "ts_" << static_cast<long long>(t)
-         << "_N=" << cfg.N
-         << "_align=" << (cfg.align32 ? "on" : "off")
-         << "_arch=" << arch
-         << (seq ? "_seq" : "");
+  oss_id << "ts_" << static_cast<long long>(t) << "_N=" << cfg.N
+         << "_align=" << (cfg.align32 ? "on" : "off") << "_arch=" << arch << (seq ? "_seq" : "");
   std::ostringstream oss_cfg;
-  oss_cfg << "N=" << cfg.N << ",align32=" << (cfg.align32 ? "on" : "off")
-          << ",arch=" << arch << (seq ? ",seq=on" : ",seq=off");
+  oss_cfg << "N=" << cfg.N << ",align32=" << (cfg.align32 ? "on" : "off") << ",arch=" << arch
+          << (seq ? ",seq=on" : ",seq=off");
   Metrics mx_out = mx;
   mx.run_id = oss_id.str();
   mx.config_str = oss_cfg.str();
 
   mx.to_csv(out_csv);
 
-  std::cout << "arch=" << arch
-            << " N=" << cfg.N
-            << " align32=" << (cfg.align32 ? "on" : "off")
-            << (seq ? " (seq)" : "      ")
-            << "  DotProduct total=" << total
-            << " ref=" << ref
+  std::cout << "arch=" << arch << " N=" << cfg.N << " align32=" << (cfg.align32 ? "on" : "off")
+            << (seq ? " (seq)" : "      ") << "  DotProduct total=" << total << " ref=" << ref
             << " |err|=" << std::abs(total - ref) << "\n";
   std::cout << "CSV -> " << out_csv << "\n";
   return 0;
