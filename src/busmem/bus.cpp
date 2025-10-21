@@ -24,7 +24,10 @@ void Bus::run() {
 
     {
       std::unique_lock<std::mutex> lk(m);
-      cv.wait(lk, [&] { return hasWork(); });
+      cv.wait(lk, [&] { return hasWork() || stop_requested_; });
+      if (stop_requested_ && !hasWork()) {
+        break;
+      }
       for (int k = 0; k < L1_COUNT; k++) {
         int i = (rr_idx + k) % L1_COUNT;
         if (!fifos[i].empty()) {
@@ -138,6 +141,11 @@ void Bus::handleInv(int owner, const BusPacket& req, const std::vector<SnoopResp
 void Bus::handleFlush(int owner, const BusPacket& req, const std::vector<SnoopResp>& /*resp*/) {
   tickBusy(MEM_LAT);
   memory.writeLine(req.addrLine, req.data);
+}
+
+void Bus::stop() {
+  stop_requested_ = true; // Poner la bandera
+  cv.notify_one();        // Despertar al hilo del bus si está dormido
 }
 
 // Extras

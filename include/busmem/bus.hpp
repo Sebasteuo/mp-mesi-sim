@@ -6,6 +6,7 @@
 #include <functional>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 #include "busMetrics.hpp"
 #include "interfaces.hpp"
 
@@ -14,6 +15,7 @@ public:
   Bus(IMemory& mem, std::array<ICache*, L1_COUNT> caches);
   void enqueue(int l1_id, const BusPacket& req);
   void run(); // loop del bus
+  void stop();
 
   void tickBusy(unsigned long cycles);
 
@@ -42,6 +44,7 @@ private:
   int rr_idx = 0;
   std::uint64_t sim_time = 0;
   BusMetrics met;
+  std::atomic<bool> stop_requested_{false};
 
   // Extra
 

@@ -70,7 +70,7 @@ int main() {
 
   // Iniciar el hilo del bus
   std::thread bus_thread(&Bus::run, &bus);
-  bus_thread.detach();
+  // bus_thread.detach();
 
   std::cout << "\n--- Inicio de la Simulación de Carga de Trabajo ---\n";
 
@@ -86,6 +86,9 @@ int main() {
   pe0.join();
   pe1.join();
   pe2.join();
+
+  bus.stop();
+  bus_thread.join();
 
   std::cout << "\n--- Simulación Terminada ---" << std::endl;
 
