@@ -151,5 +151,5 @@ void Bus::stop() {
 // Extras
 void Bus::tickBusy(unsigned long cycles) {
   tick += cycles;
-  std::cout << "Tiempo global del simulador: " << tick << " ciclos." << std::endl;
+  std::cout << "[BUS] tiempo= " << tick << " ciclos." << std::endl;
 }
