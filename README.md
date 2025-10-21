@@ -26,6 +26,50 @@ mp-mesi-sim/
 └── CMakeLists.txt         -> Archivo principal de compilación
 ```
 
+## Interfaz de Usuario (UI)
+La interfaz web permite ejecutar el simulador, ver los logs en tiempo real y descargar los resultados en formato CSV.
+
+- Requisitos: Node.js v18 o superior y npm v9 o superior
+```text
+# Clonar y entrar al proyecto
+git clone https://github.com/Sebasteuo/mp-mesi-sim.git
+cd mp-mesi-sim
+
+# Compilar el simulador
+./scripts/build.sh
+
+# Instalar dependencias de la interfaz (solo una vez)
+cd ui
+npm install
+
+# Iniciar el servidor de la UI
+node server.js
+
+Abrí en el navegador 👉 http://localhost:XXXXX
+```
+
+- mock (mem plana) → versión simplificada sin bus ni caché.
+
+- l1bus (L1 + Bus + Mem) → simulación completa con coherencia MESI.
+
+- N: cantidad de elementos en el producto punto.
+
+- align32: usa alineación de 32B.
+
+- seq (solo l1bus): ejecuta de forma secuencial.
+
+- debug: muestra trazas de [BUS] y [MEM].
+
+La UI muestra:
+
+- Log detallado del simulador.
+
+- Resumen de ejecución (resultado total, PE count, nombre del CSV).
+
+- Tabla de métricas por PE.
+
+- Enlace directo para descargar el CSV generado.
+  
 ## Asignación de módulos
 
 | Integrante | Módulo | Descripción |
@@ -70,12 +114,23 @@ Flujo de una operación típica:
 
 ## Estado actual del proyecto
 
-- Estructura base del repositorio lista
-- Sistema de compilación con CMake funcionando
-- CI automático en GitHub Actions configurado
-- Mocks activos para ejecutar el proyecto sin dependencias
-- Interfaces base y contratos definidos
-- Pendiente la implementación de los módulos L1, Bus/Mem y PE
+- Implementación completa de PEs, L1, Bus y Memoria compartida con coherencia MESI funcional.
+
+- CSV automático con métricas por cada PE (hits, misses, loads, stores, etc.).
+
+- Soporte de ejecución flexible:
+
+--arch mock: modo de prueba con memoria plana.
+
+--arch l1bus: modo completo (L1 + Bus + Memoria).
+
+- Flags: --seq, --align32, --debug, --out <csv>.
+
+- Interfaz gráfica (UI) integrada, para ejecutar y visualizar los resultados desde el navegador.
+
+- Casos validados: N = 1, 8, 17, 32, 64 → resultados coinciden con el modelo de referencia.
+
+- Trazas detalladas de [BUS] y [MEM] disponibles en modo --debug.
 
 ## Scripts disponibles
 
