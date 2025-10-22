@@ -171,4 +171,7 @@ void Cache::tickBusy(unsigned long cycles) {
 CacheMetrics Cache::getMetrics() const {
   std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(mtx));
   return met;
+}// Implementación simple: guardar el puntero al bus
+void Cache::setBus(IBus& bus_ref) {
+  bus = &bus_ref;
 }

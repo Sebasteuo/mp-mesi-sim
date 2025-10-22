@@ -48,4 +48,4 @@ void SharedMemory::writeLine(std::uint64_t lineAddr,
     std::cout << "[MEM] writeLine addr=" << lineAddr << "\n";
     const auto base = lineAddr;
     for (int i = 0; i < LINE_SIZE; ++i) mem[base + i] = in[i];
-} = in[i];
+}
