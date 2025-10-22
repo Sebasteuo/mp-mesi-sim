@@ -5,8 +5,10 @@
 #include <cstring>
 #include <array>
 #include <map>
+#include <list>
 #include <mutex>
 #include <stdexcept>
+#include <tuple>
 #include <condition_variable>
 #include "include/busmem/interfaces.hpp"
 #include "include/l1/cacheMetrics.hpp"
@@ -18,6 +20,7 @@ enum class MESIState { MODIFIED, EXCLUSIVE, SHARED, INVALID };
 // Representa una línea en la caché
 struct CacheLine {
   MESIState state = MESIState::INVALID;
+  uint64_t tag = 0;
   std::array<uint8_t, LINE_SIZE> data{};
 };
 
@@ -40,8 +43,18 @@ public:
   CacheMetrics getMetrics() const;
 
 private:
+  // Direccion
+  uint64_t getTag(uint64_t addr) const;
+  uint64_t getIndex(uint64_t addr) const;
+  uint64_t getOffset(uint64_t addr) const;
   uint64_t getLineAddr(uint64_t addr) const;
-  size_t getOffset(uint64_t addr) const;
+
+  uint64_t reconstructAddr(uint64_t tag, uint64_t index) const;
+
+  // Cache
+  std::pair<CacheLine*, int> findLineInSet(uint64_t lineAddr);
+  int findVictimWay(uint64_t index);
+  void updateLru(uint64_t index, int way);
 
   // Métodos para manejar fallos de caché
   void handleReadMiss(uint64_t lineAddr);
@@ -57,7 +70,8 @@ private:
   CacheMetrics met;
 
   // Almacenamiento de la caché
-  std::map<uint64_t, CacheLine> lines;
+  std::array<std::array<CacheLine, L1_CACHE_WAYS>, L1_CACHE_SETS> sets;
+  std::array<std::list<int>, L1_CACHE_SETS> lru_ways;
 };
 
 // Implementación de las plantillas (templates)
@@ -68,28 +82,30 @@ template <typename T> T Cache::read(uint64_t addr) {
 
   uint64_t lineAddr = getLineAddr(addr);
   size_t offset = getOffset(addr);
+  uint64_t index = getIndex(lineAddr);
 
   std::unique_lock<std::mutex> lock(mtx);
 
-  auto it = lines.find(lineAddr);
+  auto [line, way] = findLineInSet(lineAddr);
   bool did_miss = false;
 
   // MISS: La línea no está en la caché o es inválida
-  while (it == lines.end() || it->second.state == MESIState::INVALID) {
+  while (line == nullptr || line->state == MESIState::INVALID) {
     if (!did_miss) {
       met.misses_r++;
       did_miss = true;
     }
     handleReadMiss(lineAddr);
     cv.wait(lock);
-    it = lines.find(lineAddr);
+    std::tie(line, way) = findLineInSet(lineAddr);
   }
 
   // HIT: La línea está en la caché y es válida
   met.hits++;
   tickBusy(L1_HIT_LAT);
+  updateLru(index, way);
   T value;
-  memcpy(&value, &it->second.data[offset], sizeof(T));
+  memcpy(&value, &line->data[offset], sizeof(T));
   return value;
 }
 
@@ -99,19 +115,19 @@ template <typename T> void Cache::write(uint64_t addr, const T& value) {
   }
 
   uint64_t lineAddr = getLineAddr(addr);
-  size_t offset = getOffset(addr);
+  size_t offset = getOffset(lineAddr);
+  uint64_t index = getIndex(lineAddr);
 
   std::unique_lock<std::mutex> lock(mtx);
   bool did_miss = false;
 
-  auto it = lines.find(lineAddr);
-
   // MISS: La línea no está o es inválida
   while (true) {
-    auto it = lines.find(lineAddr);
+    auto [line, way] = findLineInSet(lineAddr);
 
-    if (it == lines.end() || it->second.state == MESIState::INVALID) {
+    if (line == nullptr || line->state == MESIState::INVALID) {
       // --- WRITE MISS (Desde I) ---
+      // Write-Allocate
       if (!did_miss) {
         met.misses_w++;
         did_miss = true;
@@ -119,7 +135,7 @@ template <typename T> void Cache::write(uint64_t addr, const T& value) {
       handleWriteMiss(lineAddr); // Envía BusUp
       cv.wait(lock);             // Espera a que onBusData() nos despierte
 
-    } else if (it->second.state == MESIState::SHARED) {
+    } else if (line->state == MESIState::SHARED) {
       // --- UPGRADE MISS (Desde S) ---
       if (!did_miss) {
         met.misses_w++;
@@ -130,10 +146,12 @@ template <typename T> void Cache::write(uint64_t addr, const T& value) {
 
     } else {
       // --- WRITE HIT (Desde E o M) ---
+      // Write-Back
       met.hits++;
       tickBusy(L1_HIT_LAT);
-      it->second.state = MESIState::MODIFIED;
-      memcpy(&it->second.data[offset], &value, sizeof(T));
+      updateLru(index, way);
+      line->state = MESIState::MODIFIED;
+      memcpy(&line->data[offset], &value, sizeof(T));
       break;
     }
   }

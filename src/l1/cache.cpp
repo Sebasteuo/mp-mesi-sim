@@ -3,18 +3,64 @@
 #include <iostream>
 #include <cstring>
 
-Cache::Cache(int id) : id(id), bus(nullptr) {}
+constexpr int OFFSET_BITS = 5;
+constexpr int INDEX_BITS = 4;
+constexpr uint64_t INDEX_MASK = (1 << INDEX_BITS) - 1;
 
-void Cache::setBus(IBus& bus_ref) {
-  this->bus = &bus_ref;
+Cache::Cache(int id) : id(id), bus(nullptr) {
+  for (int i = 0; i < L1_CACHE_SETS; ++i) {
+    for (int w = 0; w < L1_CACHE_WAYS; ++w) {
+      lru_ways[i].push_back(w);
+    }
+  }
 }
 
 uint64_t Cache::getLineAddr(uint64_t addr) const {
   return addr & ~(LINE_SIZE - 1);
 }
-
-size_t Cache::getOffset(uint64_t addr) const {
+uint64_t Cache::getOffset(uint64_t addr) const {
   return addr & (LINE_SIZE - 1);
+}
+uint64_t Cache::getIndex(uint64_t addr) const {
+  // Desplaza los bits de offset y aplica la máscara de índice
+  return (addr >> OFFSET_BITS) & INDEX_MASK;
+}
+uint64_t Cache::getTag(uint64_t addr) const {
+  // Desplaza los bits de offset e índice
+  return addr >> (OFFSET_BITS + INDEX_BITS);
+}
+uint64_t Cache::reconstructAddr(uint64_t tag, uint64_t index) const {
+  // Vuelve a ensamblar la dirección de la línea
+  return (tag << (OFFSET_BITS + INDEX_BITS)) | (index << OFFSET_BITS);
+}
+
+std::pair<CacheLine*, int> Cache::findLineInSet(uint64_t lineAddr) {
+  uint64_t tag = getTag(lineAddr);
+  uint64_t index = getIndex(lineAddr);
+
+  for (int way = 0; way < L1_CACHE_WAYS; ++way) {
+    auto& line = sets[index][way];
+    if (line.state != MESIState::INVALID && line.tag == tag) {
+      return {&line, way}; // HIT
+    }
+  }
+  return {nullptr, -1}; // MISS
+}
+
+int Cache::findVictimWay(uint64_t index) {
+  for (int way = 0; way < L1_CACHE_WAYS; ++way) {
+    if (sets[index][way].state == MESIState::INVALID) {
+      return way;
+    }
+  }
+
+  int lru_way = lru_ways[index].front();
+  return lru_way;
+}
+
+void Cache::updateLru(uint64_t index, int way) {
+  lru_ways[index].remove(way);
+  lru_ways[index].push_back(way);
 }
 
 void Cache::handleReadMiss(uint64_t lineAddr) {
@@ -37,63 +83,76 @@ void Cache::onBusData(const BusPacket& pkt, bool shared) {
   std::unique_lock<std::mutex> lock(mtx);
 
   uint64_t lineAddr = pkt.addrLine;
-  auto& line = lines[lineAddr]; // Crea o accede a la línea
+  uint64_t index = getIndex(lineAddr);
+  uint64_t tag = getTag(lineAddr);
 
-  line.data = pkt.data;
+  // 1. Encontrar una vía para la nueva línea (Inválida o LRU)
+  int way = findVictimWay(index);
+  CacheLine& victim_line = sets[index][way];
 
-  // Determinar el estado basado en si la línea fue compartida por otra caché
-  // La lógica del bus debe determinar esto durante el snooping.
-  if (shared) {
-    line.state = MESIState::SHARED;
-  } else {
-    line.state = MESIState::EXCLUSIVE;
+  // 2. Si la línea víctima está sucia (MODIFIED), escribirla a memoria primero.
+  if (victim_line.state == MESIState::MODIFIED) {
+    uint64_t oldAddr = reconstructAddr(victim_line.tag, index);
+    std::cout << "L1-" << id << ": Evicción con Write-Back de la dirección " << oldAddr
+              << std::endl;
+    BusPacket flush_pkt{BusMsgType::Flush, oldAddr, id, victim_line.data};
+    bus->enqueue(id, flush_pkt);
   }
 
-  std::cout << "L1-" << id << ": Recibidos datos para " << lineAddr
-            << ". Nuevo estado: " << (shared ? "SHARED" : "EXCLUSIVE") << std::endl;
+  // 3. Instalar la nueva línea
+  victim_line.data = pkt.data;
+  victim_line.tag = tag;
+  victim_line.state = shared ? MESIState::SHARED : MESIState::EXCLUSIVE;
 
+  std::cout << "L1-" << id << ": Recibidos datos para " << lineAddr
+            << ". Nuevo estado: " << (shared ? "SHARED" : "EXCLUSIVE") << ". Instalado en set "
+            << index << ", vía " << way << std::endl;
+
+  // 4. Actualizar LRU
+  updateLru(index, way);
+
+  // 5. Despertar al hilo que espera
   cv.notify_all();
 }
 
 SnoopResp Cache::snoop(const BusPacket& pkt) {
   std::unique_lock<std::mutex> lock(mtx);
   uint64_t lineAddr = pkt.addrLine;
-  auto it = lines.find(lineAddr);
+  uint64_t index = getIndex(lineAddr);
 
+  auto [line, way] = findLineInSet(lineAddr);
   SnoopResp resp;
 
-  if (it == lines.end() || it->second.state == MESIState::INVALID) {
+  if (line == nullptr) {
     resp.hasLine = false;
     return resp;
   }
 
+  // Si hay hit, actualizar LRU
+  updateLru(index, way);
+
   resp.hasLine = true;
-  CacheLine& line = it->second;
 
   switch (pkt.type) {
   case BusMsgType::BusRd:
-    // Otra caché está leyendo.
     std::cout << "L1-" << id << ": Snoop Hit en " << lineAddr << " para BusRd." << std::endl;
-    if (line.state == MESIState::MODIFIED) {
+    if (line->state == MESIState::MODIFIED) {
       resp.isModified = true;
-      resp.data = line.data;
-
-      BusPacket flush_pkt{BusMsgType::Flush, lineAddr, id, line.data};
+      resp.data = line->data;
+      BusPacket flush_pkt{BusMsgType::Flush, lineAddr, id, line->data};
       bus->enqueue(id, flush_pkt);
     }
-    // Tanto en Modified como en Exclusive, pasamos a Shared.
-    line.state = MESIState::SHARED;
+    line->state = MESIState::SHARED;
     resp.sharedHit = true;
     break;
 
   case BusMsgType::BusUp:
   case BusMsgType::Invalidate:
-    // Otra caché quiere escribir. Debemos invalidar nuestra copia.
     met.inval_recv++;
     std::cout << "L1-" << id << ": Snoop Hit en " << lineAddr << " para "
               << (pkt.type == BusMsgType::BusUp ? "BusUp" : "Invalidate") << ". Invalidando línea."
               << std::endl;
-    line.state = MESIState::INVALID;
+    line->state = MESIState::INVALID;
     cv.notify_all();
     break;
 
