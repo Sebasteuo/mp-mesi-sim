@@ -1,92 +1,53 @@
 /*
   loader.cpp
-  Prepara A, B y limpia partial_sums.
-  Si --align32 está activo, los parciales se separan 32 bytes (1 línea de 32B).
+  Prepara A, B y limpia partial_sums usando SIEMPRE las bases de RunConfig.
+  - A[i] = 1 + i
+  - B[i] = 0.5*i - 1
+  - Parciales[pe] = 0.0
+
+  Nota: Solo si baseA/baseB/basePartial vienen TODOS en 0, se aplica un layout implícito
+  (A=0, B justo después de A, Parciales después de B), respetando --align32.
 */
 #include "pe/loader.hpp"
-#include <cstring>     
-#include "include/busmem/messagesTypes.hpp"
+#include <cstring>
+#include <cstdint>
+#include <iostream>
 
-static inline uint64_t pack_double(double x) {
-  uint64_t u; std::memcpy(&u, &x, sizeof(double)); return u;
-}
-static inline void store64(IDataMem* m, std::uint64_t addr, std::uint64_t u64) {
-    m->store64(addr, u64);
-}
-static inline void storeU32(IDataMem* m, std::uint64_t addr, std::uint32_t u32) {
-    m->store64(addr, static_cast<std::uint64_t>(u32));
+static inline uint64_t pack_double(double x){
+  uint64_t u; std::memcpy(&u,&x,sizeof(double)); return u;
 }
 
-void Loader::init(IDataMem* m, const RunConfig& c) {
-    mem = m;
-    cfg = c;
+void Loader::init(IDataMem* m, const RunConfig& c){
+  mem = m; cfg = c;
 
-    // 1) Definir layout (ajusta HW threads / #PEs si los tienes en RunConfig)
-    const std::uint32_t HW_THREADS = 4;    // <- si tienes cfg.hw_threads, úsalo aquí
-    const std::uint32_t NUM_PES    = 4;    // <- si tienes cfg.num_pes, úsalo aquí
-    setup_layout(/*N=*/cfg.N, HW_THREADS, NUM_PES, /*align32=*/cfg.align32);
-
-    // 2) Escribir CONSTANTES visibles para el ASM/PEs
-    write_consts();
-
-    // 3) Inicializaciones de contenido (vectores A/B, parciales y resultado)
-    load_vectors();
-    clear_partials();
-    store64(mem, layout.BASE_RESULT, pack_double(0.0));
+  // Fallback de segmentación SOLO si NO nos pasaron layout (todas en 0).
+  if (cfg.baseA==0 && cfg.baseB==0 && cfg.basePartial==0) {
+    auto align_up = [&](uint64_t v, uint64_t a){ return (a==0)? v : ((v + a - 1) / a) * a; };
+    uint64_t bytes = static_cast<uint64_t>(cfg.N) * 8ull;  // N doubles (8B c/u)
+    uint64_t A0 = 0;
+    uint64_t B0 = align_up(A0 + bytes, cfg.align32 ? 32ull : 1ull);
+    uint64_t P0 = align_up(B0 + bytes, cfg.align32 ? 32ull : 1ull);
+    cfg.baseA = A0; cfg.baseB = B0; cfg.basePartial = P0;
+    std::cerr << "[INFO] Loader: usando layout implícito A="<<A0<<" B="<<B0<<" P="<<P0
+              << " (N="<<cfg.N<<", align32="<<(cfg.align32? "on":"off")<<")\n";
+  }
 }
 
-void Loader::setup_layout(std::uint32_t N,
-                          std::uint32_t hw_threads,
-                          std::uint32_t pes,
-                          bool align32)
-{
-    // Calcula el mapa de memoria (segmentación)
-    layout.compute(N, hw_threads, pes, /*align_partials_to_line=*/align32);
-
-    // Mantener compatibilidad con el resto del código: propaga bases a cfg
-    cfg.baseA       = layout.BASE_A;
-    cfg.baseB       = layout.BASE_B;
-    cfg.basePartial = layout.BASE_PARTIALS;
-
-    // Si no existe en tu RunConfig, puedes omitir esta asignación
-    // o añadir el campo baseResult al RunConfig.
-    // cfg.baseResult  = layout.BASE_RESULT;
+void Loader::load_vectors(){
+  // Escribe A y B contiguos (double = 8B) en las bases de cfg
+  for (int i = 0; i < cfg.N; ++i) {
+    const uint64_t off = static_cast<uint64_t>(i) * 8ull;
+    const double a = 1.0 + i;
+    const double b = 0.5*i - 1.0;
+    mem->store64(cfg.baseA + off, pack_double(a));
+    mem->store64(cfg.baseB + off, pack_double(b));
+  }
 }
 
-void Loader::write_consts() {
-    const std::uint64_t C = layout.BASE_CONSTS;
-
-    // Offsets (múltiplos de 8 para que calcen en línea):
-    // 0x00: N (u32)          0x08: NUM_HW_THREADS (u32)   0x10: NUM_SYSTEM_PES (u32)
-    // 0x18: BASE_A (u64)     0x20: BASE_B (u64)           0x28: BASE_PARTIALS (u64)
-    // 0x30: BASE_RESULT (u64)
-    storeU32(mem, C + 0x00, layout.N);
-    storeU32(mem, C + 0x08, layout.NUM_HW_THREADS);
-    storeU32(mem, C + 0x10, layout.NUM_SYSTEM_PES);
-
-    store64(mem, C + 0x18, layout.BASE_A);
-    store64(mem, C + 0x20, layout.BASE_B);
-    store64(mem, C + 0x28, layout.BASE_PARTIALS);
-    store64(mem, C + 0x30, layout.BASE_RESULT);
-}
-
-void Loader::load_vectors() {
-    // Escribe A y B en las bases calculadas por el layout.
-    // Ajusta aquí si en tu RunConfig tienes otras fuentes de datos.
-    for (std::uint32_t i = 0; i < cfg.N; ++i) {
-        const double a = 1.0 + static_cast<double>(i);
-        const double b = 0.5 * static_cast<double>(i) - 1.0;
-        store64(mem, cfg.baseA + static_cast<std::uint64_t>(i)*8ull, pack_double(a));
-        store64(mem, cfg.baseB + static_cast<std::uint64_t>(i)*8ull, pack_double(b));
-    }
-}
-
-void Loader::clear_partials() {
-    // Si align32=true, reservamos una LÍNEA por PE (evita false sharing):
-    const std::uint64_t stride = cfg.align32 ? static_cast<std::uint64_t>(LINE_SIZE) : 8ull;
-
-    for (std::uint32_t pe = 0; pe < layout.NUM_SYSTEM_PES; ++pe) {
-        const std::uint64_t addr = cfg.basePartial + pe * stride;
-        store64(mem, addr, pack_double(0.0));
-    }
+void Loader::clear_partials(){
+  // Parciales en 0, con stride 8B o 32B según --align32
+  const uint64_t stride = cfg.align32 ? 32ull : 8ull;
+  for (int pe = 0; pe < 4; ++pe) {
+    mem->store64(cfg.basePartial + static_cast<uint64_t>(pe) * stride, pack_double(0.0));
+  }
 }
