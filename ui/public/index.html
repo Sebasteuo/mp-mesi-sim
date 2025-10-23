@@ -66,14 +66,14 @@ th:first-child,td:first-child{text-align:left}
 
 <script>
 const $ = id => document.getElementById(id);
-const nf = new Intl.NumberFormat('en-US',{ maximumFractionDigits:2 });
+const nf = new Intl.NumberFormat('en-US',{ maximumFractionDigits: 2 });
 
 function fillTable(headers, rows){
   const thead = document.querySelector('#tbl thead');
   const tbody = document.querySelector('#tbl tbody');
   thead.innerHTML = '<tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr>';
   tbody.innerHTML = rows.map(r => '<tr>' + headers.map(h=>{
-    const v = r[h]; const num = Number(v);
+    const v = r[h]; const num = Number(String(v).replace(/,/g,''));
     return `<td>${Number.isFinite(num)? nf.format(num) : v}</td>`;
   }).join('') + '</tr>').join('');
 }
@@ -95,19 +95,25 @@ async function runSim(){
     $('csvname').textContent = data.csv_file || '—';
     $('dl').href = '/csv?file=' + (data.csv_file || '');
 
-    // resumen
-    $('pes').textContent = data.rows.length;
-    $('total').textContent = nf.format(data.sum_result||0);
+    // usar rows en toda la UI
+    const rows = data.rows || [];
+    $('pes').textContent   = rows.length;
+
+    // total robusto: quitar comas y sumar
+    const total = rows.reduce((s,r)=>{
+      const x = parseFloat(String(r.result).replace(/,/g,''));
+      return s + (isNaN(x)?0:x);
+    }, 0);
+    $('total').textContent = nf.format(total);
 
     // tabla
-    fillTable(data.header, data.rows);
+    fillTable(data.header, rows);
   } catch(e) {
     $('log').value = '[UI] ' + e;
   } finally {
     $('runBtn').disabled = false;
   }
 }
-
 $('runBtn').addEventListener('click', runSim);
 </script>
 </body>

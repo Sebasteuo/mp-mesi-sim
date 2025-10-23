@@ -23,3 +23,8 @@ Makefile
 run_metrics.csv
 out_*.csv
 *.log
+
+# UI artifacts
+ui/output/
+ui/public/*.bak
+src/pe/*.bak
