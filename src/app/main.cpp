@@ -12,6 +12,7 @@
 */
 
 #include <iostream>
+#include <memory>
 #include <thread>
 #include <vector>
 #include <cmath>
@@ -23,6 +24,7 @@
 
 #include "api/idata_mem.hpp"
 #include "util/run_config.hpp"
+#include "util/step_gate.hpp"
 #include "util/metrics.hpp"
 #include "pe/pe.hpp"
 #include "pe/loader.hpp"
@@ -58,7 +60,11 @@ static inline void mem_store64_line(IMemory& mem, uint64_t addr, uint64_t val) {
 }
 
 int main(int argc, char** argv) {
-  // -------- parse args --------
+  
+  
+  { const char* _step = std::getenv("MESI_STEP"); if(_step){ std::string s(_step); StepGate::set(s.find("bus")!=std::string::npos, s.find("mem")!=std::string::npos); } }
+{ const char* _step = std::getenv("MESI_STEP"); if(_step){ std::string s(_step); StepGate::set(s.find("bus")!=std::string::npos, s.find("mem")!=std::string::npos); } }
+// -------- parse args --------
   std::string arch = "mock"; // mock | l1bus
   RunConfig cfg;
   cfg.N = 32;
@@ -88,7 +94,8 @@ int main(int argc, char** argv) {
 
   if (arch == "mock") {
     // ===================== MODO MOCK =====================
-    IDataMem* mem = create_mock_ram();
+    auto mem_owner = std::unique_ptr<IDataMem>(create_mock_ram());
+    IDataMem* mem = mem_owner.get();
     cfg.baseA = 0ull;
     cfg.baseB = 8ull * 1024 * 1024;
     cfg.basePartial = 16ull * 1024 * 1024;
