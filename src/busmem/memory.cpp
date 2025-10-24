@@ -1,3 +1,4 @@
+#include "util/step_gate.hpp"
 #include <iostream>
 #include "include/busmem/memory.hpp"
 
@@ -27,7 +28,8 @@ inline void SharedMemory::check_bounds(std::uint64_t addr) const {
 // ----- IMemory -----
 void SharedMemory::readLine(std::uint64_t lineAddr,
                             std::array<std::uint8_t, LINE_SIZE>& out) {
-    check_aligned(lineAddr);
+StepGate::wait_if_mem(std::string("readLine addr=")+std::to_string(lineAddr));
+check_aligned(lineAddr);
     check_bounds(lineAddr);
 
     std::cout << "[MEM] readLine addr=" << lineAddr << "\n";
@@ -37,7 +39,8 @@ void SharedMemory::readLine(std::uint64_t lineAddr,
 
 void SharedMemory::writeLine(std::uint64_t lineAddr,
                              const std::array<std::uint8_t, LINE_SIZE>& in) {
-    check_aligned(lineAddr);
+StepGate::wait_if_mem(std::string("writeLine addr=")+std::to_string(lineAddr));
+check_aligned(lineAddr);
     check_bounds(lineAddr);
 
     if (guard_consts_ && lineAddr >= consts_begin_ && (lineAddr + LINE_SIZE) <= consts_end_) {

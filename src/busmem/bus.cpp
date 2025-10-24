@@ -1,3 +1,4 @@
+#include "util/step_gate.hpp"
 #include "include/busmem/bus.hpp"
 #include <iostream>
 
@@ -152,4 +153,5 @@ void Bus::stop() {
 void Bus::tickBusy(unsigned long cycles) {
   tick += cycles;
   std::cout << "[BUS] tiempo= " << tick << " ciclos." << std::endl;
+  StepGate::wait_if_bus(std::string("t=")+std::to_string(tick));
 }
