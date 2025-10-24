@@ -28,10 +28,17 @@ mp-mesi-sim/
 └── CMakeLists.txt         -> Archivo principal de compilación
 ```
 
+## Requisitos Minimos
+build-essential y cmake
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake
+```
+
 ## Interfaz de Usuario (UI)
 La interfaz web permite ejecutar el simulador, ver los logs en tiempo real y descargar los resultados en formato CSV.
 
-- Requisitos: Node.js v18 o superior y npm v9 o superior
+- Requisitos para interfaz: Node.js v18 o superior y npm v9 o superior
 ```text
 # Clonar y entrar al proyecto
 git clone https://github.com/Sebasteuo/mp-mesi-sim.git
@@ -89,17 +96,50 @@ La UI muestra:
   - Mensajes de control (1 a 2 bytes)
   - Mensajes de datos (líneas completas de 32 bytes)
 
-## Cómo compilar y ejecutar
+# Cómo compilar y ejecutar
 
-# Construir el proyecto
+## Construir el proyecto
+```bash
 ./scripts/build.sh
+```
 
-# Ejecutar una demo simple
+## (No necesaario) Compilar CMakeLists
+```bash
+mkdir build && cd build
+cmake ..
+cmake --build . -j
+```
+
+## Ejecutar una demo simple
+```bash
 ./scripts/run_demo.sh
+```
 
 Por defecto se compila con una memoria simulada (MockRam) que permite ejecutar el proyecto aunque los módulos L1 y Bus+Memoria todavía no estén implementados.
 
-## Estructura modular del simulador
+## Steeping Mode 
+Solo funciona en modo terminal
+Posee dos modos:
+- MESI_STEP=mem: Hace step cada vez que el simulador toca memoria principal  
+- MESI_STEP=bus: Hace step cada vez que avanza el "tiempo del bus"
+
+```bash
+MESI_STEP=mem ./build/sim --arch l1bus --N 8 --seq --debug
+```
+Si se desea evitar dar Enter por cada step:
+```bash
+yes "" | MESI_STEP=mem ./build/sim --arch l1bus --N 8 --seq --debug
+```
+
+## PE Trace
+Solo funciona en modo terminal
+Imprime, por cada PE los conteos de instrucciones y el resultado parcial
+```bash
+PE_TRACE=1 ./build/sim --arch l1bus --N 8 --seq --debug
+```
+
+
+# Estructura modular del simulador
 
 Cada PE utiliza una interfaz de memoria (IDataMem) sin conocer lo que hay detrás. Esa interfaz puede estar conectada a una caché L1, que a su vez se comunica con el bus y la memoria.  
 La coherencia se mantiene mediante el protocolo MESI.
