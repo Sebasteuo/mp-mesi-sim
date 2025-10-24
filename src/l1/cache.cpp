@@ -3,9 +3,12 @@
 #include <iostream>
 #include <cstring>
 
-constexpr int OFFSET_BITS = 5;
-constexpr int INDEX_BITS = 4;
-constexpr uint64_t INDEX_MASK = (1 << INDEX_BITS) - 1;
+constexpr int ilog2(int v) {
+  return (v <= 1) ? 0 : 1 + ilog2(v >> 1);
+}
+constexpr int OFFSET_BITS = ilog2(LINE_SIZE);
+constexpr int INDEX_BITS = ilog2(L1_CACHE_SETS);
+constexpr uint64_t INDEX_MASK = (1ULL << INDEX_BITS) - 1;
 
 Cache::Cache(int id) : id(id), bus(nullptr) {
   for (int i = 0; i < L1_CACHE_SETS; ++i) {
