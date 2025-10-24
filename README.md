@@ -98,6 +98,11 @@ La UI muestra:
 
 # Cómo compilar y ejecutar
 
+## Garantizar permisos de ejecución
+```bash
+chmod +x scripts/*.sh
+```
+
 ## Construir el proyecto
 ```bash
 ./scripts/build.sh
@@ -108,6 +113,11 @@ La UI muestra:
 mkdir build && cd build
 cmake ..
 cmake --build . -j
+```
+
+## Comando para compilar la UI:
+```bash
+npm run build
 ```
 
 ## Ejecutar una demo simple
@@ -189,6 +199,18 @@ Flujo de una operación típica:
   - /src/l1/ -> @Hack998
   - /src/busmem/ -> @jcur02
   - /src/pe/ -> @Sebasteuo
+
+## Troubleshooting
+
+- ❌ bash: ./scripts/build.sh: Permission denied  
+  ✅ Solución: chmod +x scripts/*.sh
+
+- ❌ node: command not found  
+  ✅ Instalar Node.js: sudo apt install nodejs npm
+
+- ❌ El simulador se “queda pegado”  
+  ✅ Es el modo stepping, presione ENTER o ejecute con yes "" | MESI_STEP=mem ...
+
 
 ## Créditos
 
